@@ -42,14 +42,12 @@ func GetisOrdGStar(i int, data, weights []float64, locality mat.Matrix) float64 
 	n := float64(len(data))
 	mean, std := stat.MeanStdDev(data, weights)
 	var dwd, dww, sw float64
-	if band, ok := locality.(mat.Banded); ok {
-		kl, ku := band.Bandwidth()
-		for j := max(0, i-kl); j < min(c, i+ku+1); j++ {
-			w := locality.At(i, j)
+	if doer, ok := locality.(mat.RowDoer); ok {
+		doer.DoRow(i, func(_, j int, w float64) {
 			sw += w
 			dwd += w * data[j]
 			dww += w * w
-		}
+		})
 	} else {
 		for j, v := range data {
 			w := locality.At(i, j)
@@ -77,30 +75,24 @@ func GlobalMoransI(data, weights []float64, locality mat.Matrix) (i, v, z float6
 	if weights != nil {
 		panic("spatial: weighted data not yet implemented")
 	}
-	rows, cols := locality.Dims()
-	if rows != len(data) || cols != len(data) {
+	if r, c := locality.Dims(); r != len(data) || c != len(data) {
 		panic("spatial: data length mismatch")
 	}
 	mean := stat.Mean(data, nil)
 
-	var kl, ku int
-	band, isBand := locality.(mat.Banded)
-	if isBand {
-		kl, ku = band.Bandwidth()
-	}
+	doer, isDoer := locality.(mat.RowDoer)
 
 	// Calculate Moran's I for the data.
 	var num, den, sum float64
 	for i, xi := range data {
 		zi := xi - mean
 		den += zi * zi
-		if isBand {
-			for j := max(0, i-kl); j < min(cols, i+ku+1); j++ {
-				w := locality.At(i, j)
+		if isDoer {
+			doer.DoRow(i, func(_, j int, w float64) {
 				sum += w
 				zj := data[j] - mean
 				num += w * zi * zj
-			}
+			})
 		} else {
 			for j, xj := range data {
 				w := locality.At(i, j)
@@ -127,9 +119,8 @@ func GlobalMoransI(data, weights []float64, locality mat.Matrix) (i, v, z float6
 		var4 += v * v
 
 		var p2 float64
-		if isBand {
-			for j := max(0, i-kl); j < min(cols, i+ku+1); j++ {
-				wij := locality.At(i, j)
+		if isDoer {
+			doer.DoRow(i, func(i, j int, wij float64) {
 				wji := locality.At(j, i)
 
 				s0 += wij
@@ -138,7 +129,7 @@ func GlobalMoransI(data, weights []float64, locality mat.Matrix) (i, v, z float6
 				s1 += v * v
 
 				p2 += v
-			}
+			})
 		} else {
 			for j := range data {
 				wij := locality.At(i, j)
@@ -168,18 +159,4 @@ func GlobalMoransI(data, weights []float64, locality mat.Matrix) (i, v, z float6
 	z = (i - e) / math.Sqrt(v)
 
 	return i, v, z
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
