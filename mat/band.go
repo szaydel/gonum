@@ -13,6 +13,8 @@ var (
 	_         Matrix  = bandDense
 	_         Banded  = bandDense
 	_         RawBand = bandDense
+
+	_ Doer = bandDense
 )
 
 // BandDense represents a band matrix in dense storage format.
@@ -20,6 +22,7 @@ type BandDense struct {
 	mat blas64.Band
 }
 
+// Banded represents a band matrix.
 type Banded interface {
 	Matrix
 	// Bandwidth returns the lower and upper bandwidth values for
@@ -31,8 +34,15 @@ type Banded interface {
 	TBand() Banded
 }
 
+// A RawBand can return a view of itself as a BLAS Band matrix.
 type RawBand interface {
 	RawBand() blas64.Band
+}
+
+// A MutableBanded can set elements of a band matrix.
+type MutableBanded interface {
+	Banded
+	SetBand(i, j int, v float64)
 }
 
 var (
@@ -167,4 +177,38 @@ func (b *BandDense) TBand() Banded {
 // in returned blas64.Band.
 func (b *BandDense) RawBand() blas64.Band {
 	return b.mat
+}
+
+// Do calls the function fn for each of the filled elements of b. The function fn
+// takes a row/column index and the element value of b at (i, j).
+func (b *BandDense) Do(fn func(i, j int, v float64)) {
+	for i := 0; i < min(b.mat.Rows, b.mat.Cols+b.mat.KL); i++ {
+		for j := max(0, i-b.mat.KL); j < min(b.mat.Cols, i+b.mat.KU+1); j++ {
+			fn(i, j, b.at(i, j))
+		}
+	}
+}
+
+// DoRow calls the function fn for each of the filled elements of row i of b. The function fn
+// takes a row/column index and the element value of b at (i, j).
+func (b *BandDense) DoRow(i int, fn func(i, j int, v float64)) {
+	if i < 0 || b.mat.Rows <= i {
+		panic(ErrRowAccess)
+	}
+	for j := max(0, i-b.mat.KL); j < min(b.mat.Cols, i+b.mat.KU+1); j++ {
+		fn(i, j, b.at(i, j))
+	}
+}
+
+// DoCol calls the function fn for each of the filled elements of column j of b. The function fn
+// takes a row/column index and the element value of b at (i, j).
+func (b *BandDense) DoCol(j int, fn func(i, j int, v float64)) {
+	if j < 0 || b.mat.Cols <= j {
+		panic(ErrColAccess)
+	}
+	for i := 0; i < min(b.mat.Rows, b.mat.Cols+b.mat.KL); i++ {
+		if i-b.mat.KL <= j && j < i+b.mat.KU+1 {
+			fn(i, j, b.at(i, j))
+		}
+	}
 }

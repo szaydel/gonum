@@ -182,6 +182,24 @@ type RawVectorer interface {
 	RawVector() blas64.Vector
 }
 
+// A Doer can call a function for each filled element of the receiver. The parameters
+// of the function are the element indices and its value.
+type Doer interface {
+	Do(func(i, j int, v float64))
+}
+
+// A RowDoer can call a function for each filled element of a row of the receiver.
+// The parameters of the function are the element indices and its value.
+type RowDoer interface {
+	DoRow(i int, fn func(i, j int, v float64))
+}
+
+// A ColDoer can call a function for each filled element of a column of the receiver.
+// The parameters of the function are the element indices and its value.
+type ColDoer interface {
+	DoCol(j int, fn func(i, j int, v float64))
+}
+
 // TODO(btracey): Consider adding CopyCol/CopyRow if the behavior seems useful.
 // TODO(btracey): Add in fast paths to Row/Col for the other concrete types
 // (TriDense, etc.) as well as relevant interfaces (RowColer, RawRowViewer, etc.)

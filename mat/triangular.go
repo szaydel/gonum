@@ -14,9 +14,12 @@ import (
 
 var (
 	triDense *TriDense
-	_        Matrix        = triDense
-	_        Triangular    = triDense
-	_        RawTriangular = triDense
+	_        Matrix            = triDense
+	_        Triangular        = triDense
+	_        RawTriangular     = triDense
+	_        MutableTriangular = triDense
+
+	_ Doer = triDense
 )
 
 const badTriCap = "mat: bad capacity for TriDense"
@@ -28,6 +31,7 @@ type TriDense struct {
 	cap int
 }
 
+// Triangular represents a triangular matrix. Triangular matrices are always square.
 type Triangular interface {
 	Matrix
 	// Triangular returns the number of rows/columns in the matrix and its
@@ -39,8 +43,15 @@ type Triangular interface {
 	TTri() Triangular
 }
 
+// A RawTriangular can return a view of itself as a BLAS Triangular matrix.
 type RawTriangular interface {
 	RawTriangular() blas64.Triangular
+}
+
+// A MutableTriangular can set elements of a triangular matrix.
+type MutableTriangular interface {
+	Triangular
+	SetTri(i, j int, v float64)
 }
 
 var (
@@ -453,5 +464,57 @@ func copySymIntoTriangle(t *TriDense, s Symmetric) {
 		for j := 0; j <= i; j++ {
 			t.mat.Data[i*ts+j] = s.At(i, j)
 		}
+	}
+}
+
+// Do calls the function fn for each of the filled elements of t. The function fn
+// takes a row/column index and the element value of t at (i, j).
+func (t *TriDense) Do(fn func(i, j int, v float64)) {
+	if t.isUpper() {
+		for i := 0; i < t.mat.N; i++ {
+			for j := i; j < t.mat.N; j++ {
+				fn(i, j, t.at(i, j))
+			}
+		}
+		return
+	}
+	for i := 0; i < t.mat.N; i++ {
+		for j := 0; j <= i; j++ {
+			fn(i, j, t.at(i, j))
+		}
+	}
+}
+
+// DoRow calls the function fn for each of the filled elements of row i of t. The function fn
+// takes a row/column index and the element value of t at (i, j).
+func (t *TriDense) DoRow(i int, fn func(i, j int, v float64)) {
+	if i < 0 || t.mat.N <= i {
+		panic(ErrRowAccess)
+	}
+	if t.isUpper() {
+		for j := i; j < t.mat.N; j++ {
+			fn(i, j, t.at(i, j))
+		}
+		return
+	}
+	for j := 0; j <= i; j++ {
+		fn(i, j, t.at(i, j))
+	}
+}
+
+// DoCol calls the function fn for each of the filled elements of column j of t. The function fn
+// takes a row/column index and the element value of t at (i, j).
+func (t *TriDense) DoCol(j int, fn func(i, j int, v float64)) {
+	if j < 0 || t.mat.N <= j {
+		panic(ErrColAccess)
+	}
+	if t.isUpper() {
+		for i := 0; i <= j; i++ {
+			fn(i, j, t.at(i, j))
+		}
+		return
+	}
+	for i := j; i < t.mat.N; i++ {
+		fn(i, j, t.at(i, j))
 	}
 }
