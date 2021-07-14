@@ -6,7 +6,6 @@ package mat
 
 import (
 	"fmt"
-	"math"
 	"reflect"
 	"testing"
 
@@ -320,32 +319,6 @@ func TestTridiagZero(t *testing.T) {
 				if a.At(i, j) != 0 {
 					t.Errorf("Case n=%d: unexpected non-zero at (%d,%d): got %f", n, i, j, a.At(i, j))
 				}
-			}
-		}
-	}
-}
-
-func TestTridiagTrace(t *testing.T) {
-	t.Parallel()
-	for _, n := range []int{1, 2, 3, 4, 7, 10} {
-		a, ref := newTestTridiag(n)
-		want := ref.Trace()
-		got := a.Trace()
-		if got != want {
-			t.Errorf("Case n=%d: unexpected trace: got %f, want %f", n, got, want)
-		}
-	}
-}
-
-func TestTridiagNorm(t *testing.T) {
-	t.Parallel()
-	for _, n := range []int{1, 2, 3, 4, 7, 10} {
-		for _, norm := range []float64{1, 2, math.Inf(1)} {
-			a, ref := newTestTridiag(n)
-			want := Norm(ref, norm)
-			got := a.Norm(norm)
-			if got != want {
-				t.Errorf("Case n=%d,norm=%.0f: unexpected norm: got %f, want %f", n, norm, got, want)
 			}
 		}
 	}

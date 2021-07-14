@@ -501,7 +501,7 @@ func TestNormZero(t *testing.T) {
 			if !panicked {
 				t.Errorf("expected panic for Norm(&%T{}, %v)", a, norm)
 			}
-			if message != ErrShape.Error() {
+			if message != ErrZeroLength.Error() {
 				t.Errorf("unexpected panic string for Norm(&%T{}, %v): got:%s want:%s",
 					a, norm, message, ErrShape.Error())
 			}
@@ -542,7 +542,7 @@ func TestTrace(t *testing.T) {
 	denseComparison := func(a *Dense) interface{} {
 		return Trace(a)
 	}
-	testOneInputFunc(t, "Trace", f, denseComparison, sameAnswerFloat, isAnyType, isSquare)
+	testOneInputFunc(t, "Trace", f, denseComparison, sameAnswerFloatApproxTol(1e-15), isAnyType, isSquare)
 }
 
 func TestTracer(t *testing.T) {

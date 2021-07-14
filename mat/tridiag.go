@@ -129,10 +129,10 @@ func (a *Tridiag) Reset() {
 	a.mat.DU = a.mat.DU[:0]
 }
 
-// Clone makes a copy of the input Tridiag into the receiver, overwriting the
-// previous value of the receiver. Clone does not place any restrictions on
-// receiver shape.
-func (a *Tridiag) Clone(from *Tridiag) {
+// CloneFromTridiag makes a copy of the input Tridiag into the receiver,
+// overwriting the previous value of the receiver. CloneFromTridiag does not
+// place any restrictions on receiver shape.
+func (a *Tridiag) CloneFromTridiag(from *Tridiag) {
 	n := from.mat.N
 	switch n {
 	case 0:
@@ -177,7 +177,12 @@ func (a *Tridiag) Zero() {
 }
 
 // Trace returns the trace of the matrix.
+//
+// Trace will panic with ErrZeroLength if the matrix has zero size.
 func (a *Tridiag) Trace() float64 {
+	if a.IsEmpty() {
+		panic(ErrZeroLength)
+	}
 	return f64.Sum(a.mat.D)
 }
 
@@ -186,8 +191,12 @@ func (a *Tridiag) Trace() float64 {
 //  2 - The Frobenius norm, the square root of the sum of the squares of the elements
 //  Inf - The maximum absolute row sum
 //
-// Norm will panic with ErrNormOrder if an illegal norm is specified.
+// Norm will panic with ErrNormOrder if an illegal norm is specified and with
+// ErrZeroLength if the matrix has zero size.
 func (a *Tridiag) Norm(norm float64) float64 {
+	if a.IsEmpty() {
+		panic(ErrZeroLength)
+	}
 	return lapack64.Langt(normLapack(norm, false), a.mat)
 }
 
@@ -207,10 +216,10 @@ func (a *Tridiag) MulVecTo(dst *VecDense, trans bool, x Vector) {
 		dst.checkOverlap(xVec.mat)
 		lapack64.Lagtm(t, 1, a.mat, xVec.asGeneral(), 0, dst.asGeneral())
 	} else {
-		xCopy := getWorkspaceVec(n, false)
+		xCopy := getVecDenseWorkspace(n, false)
 		xCopy.CloneFromVec(x)
 		lapack64.Lagtm(t, 1, a.mat, xCopy.asGeneral(), 0, dst.asGeneral())
-		putWorkspaceVec(xCopy)
+		putVecDenseWorkspace(xCopy)
 	}
 }
 
@@ -232,7 +241,7 @@ func (a *Tridiag) SolveTo(dst *Dense, trans bool, b Matrix) error {
 		dst.Copy(b)
 	}
 	var aCopy Tridiag
-	aCopy.Clone(a)
+	aCopy.CloneFromTridiag(a)
 	var ok bool
 	if trans {
 		ok = lapack64.Gtsv(blas.Trans, aCopy.mat, dst.mat)
@@ -263,7 +272,7 @@ func (a *Tridiag) SolveVecTo(dst *VecDense, trans bool, b Vector) error {
 		dst.CopyVec(b)
 	}
 	var aCopy Tridiag
-	aCopy.Clone(a)
+	aCopy.CloneFromTridiag(a)
 	var ok bool
 	if trans {
 		ok = lapack64.Gtsv(blas.Trans, aCopy.mat, dst.asGeneral())

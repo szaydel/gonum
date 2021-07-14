@@ -16,10 +16,7 @@ import (
 
 func ExampleStar_undirectedRange() {
 	dst := simple.NewUndirectedGraph()
-	err := gen.Star(dst, 0, gen.IDRange{First: 1, Last: 6})
-	if err != nil {
-		log.Fatal(err)
-	}
+	gen.Star(dst, 0, gen.IDRange{First: 1, Last: 6})
 	b, err := dot.Marshal(dst, "star", "", "\t")
 	if err != nil {
 		log.Fatal(err)
@@ -49,10 +46,7 @@ func ExampleStar_undirectedRange() {
 
 func ExampleWheel_directedRange() {
 	dst := simple.NewDirectedGraph()
-	err := gen.Wheel(dst, 0, gen.IDRange{First: 1, Last: 6})
-	if err != nil {
-		log.Fatal(err)
-	}
+	gen.Wheel(dst, 0, gen.IDRange{First: 1, Last: 6})
 	b, err := dot.Marshal(dst, "wheel", "", "\t")
 	if err != nil {
 		log.Fatal(err)
@@ -88,10 +82,7 @@ func ExampleWheel_directedRange() {
 
 func ExamplePath_directedSet() {
 	dst := simple.NewDirectedGraph()
-	err := gen.Path(dst, gen.IDSet{2, 4, 5, 9})
-	if err != nil {
-		log.Fatal(err)
-	}
+	gen.Path(dst, gen.IDSet{2, 4, 5, 9})
 	b, err := dot.Marshal(dst, "path", "", "\t")
 	if err != nil {
 		log.Fatal(err)
@@ -115,10 +106,7 @@ func ExamplePath_directedSet() {
 
 func ExampleComplete_directedSet() {
 	dst := simple.NewDirectedGraph()
-	err := gen.Complete(dst, gen.IDSet{2, 4, 5, 9})
-	if err != nil {
-		log.Fatal(err)
-	}
+	gen.Complete(dst, gen.IDSet{2, 4, 5, 9})
 	b, err := dot.Marshal(dst, "complete", "", "\t")
 	if err != nil {
 		log.Fatal(err)
@@ -155,10 +143,7 @@ func (g Bidirected) SetEdge(e graph.Edge) {
 
 func ExampleComplete_biDirectedSet() {
 	dst := simple.NewDirectedGraph()
-	err := gen.Complete(Bidirected{dst}, gen.IDSet{2, 4, 5, 9})
-	if err != nil {
-		log.Fatal(err)
-	}
+	gen.Complete(Bidirected{dst}, gen.IDSet{2, 4, 5, 9})
 	b, err := dot.Marshal(dst, "complete", "", "\t")
 	if err != nil {
 		log.Fatal(err)
@@ -191,10 +176,7 @@ func ExampleComplete_biDirectedSet() {
 
 func ExampleComplete_undirectedSet() {
 	dst := simple.NewUndirectedGraph()
-	err := gen.Complete(dst, gen.IDSet{2, 4, 5, 9})
-	if err != nil {
-		log.Fatal(err)
-	}
+	gen.Complete(dst, gen.IDSet{2, 4, 5, 9})
 	b, err := dot.Marshal(dst, "complete", "", "\t")
 	if err != nil {
 		log.Fatal(err)
@@ -216,5 +198,51 @@ func ExampleComplete_undirectedSet() {
 	// 	4 -- 5;
 	// 	4 -- 9;
 	// 	5 -- 9;
+	// }
+}
+
+func ExampleTree_undirectedRange() {
+	dst := simple.NewUndirectedGraph()
+	gen.Tree(dst, 2, gen.IDRange{First: 0, Last: 14})
+	b, err := dot.Marshal(dst, "full_binary_tree_undirected", "", "\t")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s\n", b)
+
+	// Output:
+	// strict graph full_binary_tree_undirected {
+	// 	// Node definitions.
+	// 	0;
+	// 	1;
+	// 	2;
+	// 	3;
+	// 	4;
+	// 	5;
+	// 	6;
+	// 	7;
+	// 	8;
+	// 	9;
+	// 	10;
+	// 	11;
+	// 	12;
+	// 	13;
+	// 	14;
+	//
+	// 	// Edge definitions.
+	// 	0 -- 1;
+	// 	0 -- 2;
+	// 	1 -- 3;
+	// 	1 -- 4;
+	// 	2 -- 5;
+	// 	2 -- 6;
+	// 	3 -- 7;
+	// 	3 -- 8;
+	// 	4 -- 9;
+	// 	4 -- 10;
+	// 	5 -- 11;
+	// 	5 -- 12;
+	// 	6 -- 13;
+	// 	6 -- 14;
 	// }
 }

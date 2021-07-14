@@ -104,8 +104,7 @@ func (pc *PiecewiseCubic) FitWithDerivatives(xs, ys, dydxs []float64) {
 		pc.coeffs.Set(i, 2, (3*dy-(2*dydxs[i]+dydxs[i+1])*dx)/dx/dx)
 		pc.coeffs.Set(i, 3, (-2*dy+(dydxs[i]+dydxs[i+1])*dx)/dx/dx/dx)
 	}
-	pc.xs = make([]float64, n)
-	copy(pc.xs, xs)
+	pc.xs = append(pc.xs[:0], xs...)
 	pc.lastY = ys[m]
 	pc.lastDyDx = dydxs[m]
 }
@@ -296,4 +295,219 @@ func fritschButlandEdgeDerivative(xs, ys, slopes []float64, leftEdge bool) float
 		return 3 * dE
 	}
 	return g
+}
+
+// fitWithSecondDerivatives fits a piecewise cubic predictor to (X, Y, d^2Y/dX^2) value
+// triples provided as three slices.
+// It panics if any of these is true:
+// - len(xs) < 2,
+// - elements of xs are not strictly increasing,
+// - len(xs) != len(ys),
+// - len(xs) != len(d2ydx2s).
+// Note that this method does not guarantee on its own the continuity of first derivatives.
+func (pc *PiecewiseCubic) fitWithSecondDerivatives(xs, ys, d2ydx2s []float64) {
+	n := len(xs)
+	switch {
+	case len(ys) != n, len(d2ydx2s) != n:
+		panic(differentLengths)
+	case n < 2:
+		panic(tooFewPoints)
+	}
+	m := n - 1
+	pc.coeffs.Reset()
+	pc.coeffs.ReuseAs(m, 4)
+	for i := 0; i < m; i++ {
+		dx := xs[i+1] - xs[i]
+		if dx <= 0 {
+			panic(xsNotStrictlyIncreasing)
+		}
+		dy := ys[i+1] - ys[i]
+		dm := d2ydx2s[i+1] - d2ydx2s[i]
+		pc.coeffs.Set(i, 0, ys[i])                             // a_0
+		pc.coeffs.Set(i, 1, (dy-(d2ydx2s[i]+dm/3)*dx*dx/2)/dx) // a_1
+		pc.coeffs.Set(i, 2, d2ydx2s[i]/2)                      // a_2
+		pc.coeffs.Set(i, 3, dm/6/dx)                           // a_3
+	}
+	pc.xs = append(pc.xs[:0], xs...)
+	pc.lastY = ys[m]
+	lastDx := xs[m] - xs[m-1]
+	pc.lastDyDx = pc.coeffs.At(m-1, 1) + 2*pc.coeffs.At(m-1, 2)*lastDx + 3*pc.coeffs.At(m-1, 3)*lastDx*lastDx
+}
+
+// makeCubicSplineSecondDerivativeEquations generates the basic system of linear equations
+// which have to be satisfied by the second derivatives to make the first derivatives of a
+// cubic spline continuous. It panics if elements of xs are not strictly increasing, or
+// len(xs) != len(ys).
+// makeCubicSplineSecondDerivativeEquations fills a banded matrix a and a vector b
+// defining a system of linear equations a*m = b for second derivatives vector m.
+// Parameters a and b are assumed to have correct dimensions and initialised to zero.
+func makeCubicSplineSecondDerivativeEquations(a mat.MutableBanded, b mat.MutableVector, xs, ys []float64) {
+	n := len(xs)
+	if len(ys) != n {
+		panic(differentLengths)
+	}
+	m := n - 1
+	if n > 2 {
+		for i := 0; i < m; i++ {
+			dx := xs[i+1] - xs[i]
+			if dx <= 0 {
+				panic(xsNotStrictlyIncreasing)
+			}
+			slope := (ys[i+1] - ys[i]) / dx
+			if i > 0 {
+				b.SetVec(i, b.AtVec(i)+slope)
+				a.SetBand(i, i, a.At(i, i)+dx/3)
+				a.SetBand(i, i+1, dx/6)
+			}
+			if i < m-1 {
+				b.SetVec(i+1, b.AtVec(i+1)-slope)
+				a.SetBand(i+1, i+1, a.At(i+1, i+1)+dx/3)
+				a.SetBand(i+1, i, dx/6)
+			}
+		}
+	}
+}
+
+// NaturalCubic is a piecewise cubic 1-dimensional interpolator with
+// continuous value, first and second derivatives, which can be fitted to (X, Y)
+// value pairs without providing derivatives. It uses the boundary conditions
+// Y''(left end ) = Y''(right end) = 0.
+// See e.g. https://www.math.drexel.edu/~tolya/cubicspline.pdf for details.
+type NaturalCubic struct {
+	cubic PiecewiseCubic
+}
+
+// Predict returns the interpolation value at x.
+func (nc *NaturalCubic) Predict(x float64) float64 {
+	return nc.cubic.Predict(x)
+}
+
+// PredictDerivative returns the predicted derivative at x.
+func (nc *NaturalCubic) PredictDerivative(x float64) float64 {
+	return nc.cubic.PredictDerivative(x)
+}
+
+// Fit fits a predictor to (X, Y) value pairs provided as two slices.
+// It panics if len(xs) < 2, elements of xs are not strictly increasing
+// or len(xs) != len(ys). It returns an error if solving the required system
+// of linear equations fails.
+func (nc *NaturalCubic) Fit(xs, ys []float64) error {
+	n := len(xs)
+	a := mat.NewTridiag(n, nil, nil, nil)
+	b := mat.NewVecDense(n, nil)
+	makeCubicSplineSecondDerivativeEquations(a, b, xs, ys)
+	// Add boundary conditions y''(left) = y''(right) = 0:
+	b.SetVec(0, 0)
+	b.SetVec(n-1, 0)
+	a.SetBand(0, 0, 1)
+	a.SetBand(n-1, n-1, 1)
+	x := mat.NewVecDense(n, nil)
+	err := a.SolveVecTo(x, false, b)
+	if err == nil {
+		nc.cubic.fitWithSecondDerivatives(xs, ys, x.RawVector().Data)
+	}
+	return err
+}
+
+// ClampedCubic is a piecewise cubic 1-dimensional interpolator with
+// continuous value, first and second derivatives, which can be fitted to (X, Y)
+// value pairs without providing derivatives. It uses the boundary conditions
+// Y'(left end ) = Y'(right end) = 0.
+type ClampedCubic struct {
+	cubic PiecewiseCubic
+}
+
+// Predict returns the interpolation value at x.
+func (cc *ClampedCubic) Predict(x float64) float64 {
+	return cc.cubic.Predict(x)
+}
+
+// PredictDerivative returns the predicted derivative at x.
+func (cc *ClampedCubic) PredictDerivative(x float64) float64 {
+	return cc.cubic.PredictDerivative(x)
+}
+
+// Fit fits a predictor to (X, Y) value pairs provided as two slices.
+// It panics if len(xs) < 2, elements of xs are not strictly increasing
+// or len(xs) != len(ys). It returns an error if solving the required system
+// of linear equations fails.
+func (cc *ClampedCubic) Fit(xs, ys []float64) error {
+	n := len(xs)
+	a := mat.NewTridiag(n, nil, nil, nil)
+	b := mat.NewVecDense(n, nil)
+	makeCubicSplineSecondDerivativeEquations(a, b, xs, ys)
+	// Add boundary conditions y''(left) = y''(right) = 0:
+	// Condition Y'(left end) = 0:
+	dxL := xs[1] - xs[0]
+	b.SetVec(0, (ys[1]-ys[0])/dxL)
+	a.SetBand(0, 0, dxL/3)
+	a.SetBand(0, 1, dxL/6)
+	// Condition Y'(right end) = 0:
+	m := n - 1
+	dxR := xs[m] - xs[m-1]
+	b.SetVec(m, (ys[m]-ys[m-1])/dxR)
+	a.SetBand(m, m, -dxR/3)
+	a.SetBand(m, m-1, -dxR/6)
+	x := mat.NewVecDense(n, nil)
+	err := a.SolveVecTo(x, false, b)
+	if err == nil {
+		cc.cubic.fitWithSecondDerivatives(xs, ys, x.RawVector().Data)
+	}
+	return err
+}
+
+// NotAKnotCubic is a piecewise cubic 1-dimensional interpolator with
+// continuous value, first and second derivatives, which can be fitted to (X, Y)
+// value pairs without providing derivatives. It imposes the condition that
+// the third derivative of the interpolant is continuous in the first and
+// last interior node.
+// See http://www.cs.tau.ac.il/~turkel/notes/numeng/spline_note.pdf for details.
+type NotAKnotCubic struct {
+	cubic PiecewiseCubic
+}
+
+// Predict returns the interpolation value at x.
+func (nak *NotAKnotCubic) Predict(x float64) float64 {
+	return nak.cubic.Predict(x)
+}
+
+// PredictDerivative returns the predicted derivative at x.
+func (nak *NotAKnotCubic) PredictDerivative(x float64) float64 {
+	return nak.cubic.PredictDerivative(x)
+}
+
+// Fit fits a predictor to (X, Y) value pairs provided as two slices.
+// It panics if len(xs) < 3 (because at least one interior node is required),
+// elements of xs are not strictly increasing or len(xs) != len(ys).
+// It returns an error if solving the required system of linear equations fails.
+func (nak *NotAKnotCubic) Fit(xs, ys []float64) error {
+	n := len(xs)
+	if n < 3 {
+		panic(tooFewPoints)
+	}
+	a := mat.NewBandDense(n, n, 2, 2, nil)
+	b := mat.NewVecDense(n, nil)
+	makeCubicSplineSecondDerivativeEquations(a, b, xs, ys)
+	// Add boundary conditions.
+	// First interior node:
+	dxOuter := xs[1] - xs[0]
+	dxInner := xs[2] - xs[1]
+	a.SetBand(0, 0, 1/dxOuter)
+	a.SetBand(0, 1, -1/dxOuter-1/dxInner)
+	a.SetBand(0, 2, 1/dxInner)
+	if n > 3 {
+		// Last interior node:
+		m := n - 1
+		dxOuter = xs[m] - xs[m-1]
+		dxInner = xs[m-1] - xs[m-2]
+		a.SetBand(m, m, 1/dxOuter)
+		a.SetBand(m, m-1, -1/dxOuter-1/dxInner)
+		a.SetBand(m, m-2, 1/dxInner)
+	}
+	x := mat.NewVecDense(n, nil)
+	err := x.SolveVec(a, b)
+	if err == nil {
+		nak.cubic.fitWithSecondDerivatives(xs, ys, x.RawVector().Data)
+	}
+	return err
 }
