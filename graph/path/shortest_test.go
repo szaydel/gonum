@@ -8,14 +8,15 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 
 	"golang.org/x/exp/rand"
 
 	"gonum.org/v1/gonum/graph"
 	"gonum.org/v1/gonum/graph/graphs/gen"
-	"gonum.org/v1/gonum/graph/internal/ordered"
 	"gonum.org/v1/gonum/graph/simple"
+	"gonum.org/v1/gonum/internal/order"
 )
 
 var shortestTests = []struct {
@@ -57,7 +58,7 @@ func TestShortestAlts(t *testing.T) {
 							gotPaths[i] = append(gotPaths[i], v.ID())
 						}
 					}
-					ordered.BySliceValues(gotPaths)
+					order.BySliceValues(gotPaths)
 					var wantPaths [][]int64
 					if len(want) != 0 {
 						wantPaths = make([][]int64, len(want))
@@ -67,7 +68,7 @@ func TestShortestAlts(t *testing.T) {
 							wantPaths[i] = append(wantPaths[i], v.ID())
 						}
 					}
-					ordered.BySliceValues(wantPaths)
+					order.BySliceValues(wantPaths)
 					if !reflect.DeepEqual(gotPaths, wantPaths) {
 						t.Errorf("unexpected shortest paths %d --> %d:\ngot: %v\nwant:%v",
 							uid, vid, gotPaths, wantPaths)
@@ -103,7 +104,7 @@ func TestAllShortest(t *testing.T) {
 							gotPaths[i] = append(gotPaths[i], v.ID())
 						}
 					}
-					ordered.BySliceValues(gotPaths)
+					order.BySliceValues(gotPaths)
 					var wantPaths [][]int64
 					if len(want) != 0 {
 						wantPaths = make([][]int64, len(want))
@@ -113,7 +114,7 @@ func TestAllShortest(t *testing.T) {
 							wantPaths[i] = append(wantPaths[i], v.ID())
 						}
 					}
-					ordered.BySliceValues(wantPaths)
+					order.BySliceValues(wantPaths)
 					if !reflect.DeepEqual(gotPaths, wantPaths) {
 						t.Errorf("unexpected shortest paths %d --> %d:\ngot: %v\nwant:%v",
 							uid, vid, gotPaths, wantPaths)
@@ -181,7 +182,7 @@ func (p allShortest) allBetween(from, to int, seen []bool, path []graph.Node, pa
 			return paths
 		}
 		if !p.forward {
-			ordered.Reverse(path)
+			slices.Reverse(path)
 		}
 		return append(paths, path)
 	}
@@ -262,43 +263,70 @@ func BenchmarkShortestAlts(b *testing.B) {
 }
 
 func BenchmarkAllShortest(b *testing.B) {
+	shortestPathAlgs := []struct {
+		name string
+		fn   func(g graph.Graph) AllShortest
+	}{
+		{
+			name: "DijkstraAllPaths",
+			fn:   DijkstraAllPaths,
+		},
+		{
+			name: "FloydWarshall",
+			fn: func(g graph.Graph) AllShortest {
+				p, _ := FloydWarshall(g)
+				return p
+			},
+		},
+	}
+
 	for _, bench := range shortestBenchmarks {
-		g := simple.NewDirectedGraph()
-		gen.SmallWorldsBB(g, bench.n, bench.d, bench.p, rand.New(rand.NewSource(bench.seed)))
-		p := DijkstraAllPaths(g)
+		for _, f := range shortestPathAlgs {
+			g := simple.NewDirectedGraph()
+			gen.SmallWorldsBB(g, bench.n, bench.d, bench.p, rand.New(rand.NewSource(bench.seed)))
+			p := f.fn(g)
 
-		// Find the widest path set.
-		var (
-			bestUid, bestVid int64
-			n                int
-		)
-		for uid := int64(0); uid < int64(bench.n); uid++ {
-			for vid := int64(0); vid < int64(bench.n); vid++ {
-				paths, _ := p.AllBetween(uid, vid)
-				if len(paths) > n {
-					n = len(paths)
-					bestUid = uid
-					bestVid = vid
+			// Find the widest path set.
+			var (
+				bestUid, bestVid int64
+				n                int
+			)
+			for uid := int64(0); uid < int64(bench.n); uid++ {
+				for vid := int64(0); vid < int64(bench.n); vid++ {
+					paths, _ := p.AllBetween(uid, vid)
+					if len(paths) > n {
+						n = len(paths)
+						bestUid = uid
+						bestVid = vid
+					}
 				}
 			}
+
+			b.Run(fmt.Sprintf("%s_Between_%d×%d|%v(%d)", f.name, bench.n, bench.d, bench.p, n), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					path, _, _ := p.Between(bestUid, bestVid)
+					if len(path) == 0 {
+						b.Errorf("unexpected empty path: got:%d want:%d", len(path), 0)
+					}
+				}
+			})
+			b.Run(fmt.Sprintf("%s_AllBetween_%d×%d|%v(%d)", f.name, bench.n, bench.d, bench.p, n), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					paths, _ := p.AllBetween(bestUid, bestVid)
+					if len(paths) != n {
+						b.Errorf("unexpected number of paths: got:%d want:%d", len(paths), n)
+					}
+				}
+			})
+			b.Run(fmt.Sprintf("%s_AllBetweenFunc_%d×%d|%v(%d)", f.name, bench.n, bench.d, bench.p, n), func(b *testing.B) {
+				for i := 0; i < b.N; i++ {
+					var paths int
+					p.AllBetweenFunc(bestUid, bestVid, func(_ []graph.Node) { paths++ })
+					if paths != n {
+						b.Errorf("unexpected number of paths: got:%d want:%d", paths, n)
+					}
+				}
+			})
 		}
-
-		b.Run(fmt.Sprintf("AllBetween_%d×%d|%v(%d)", bench.n, bench.d, bench.p, n), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				paths, _ := p.AllBetween(bestUid, bestVid)
-				if len(paths) != n {
-					b.Errorf("unexpected number of paths: got:%d want:%d", len(paths), n)
-				}
-			}
-		})
-		b.Run(fmt.Sprintf("AllBetweenFunc_%d×%d|%v(%d)", bench.n, bench.d, bench.p, n), func(b *testing.B) {
-			for i := 0; i < b.N; i++ {
-				var paths int
-				p.AllBetweenFunc(bestUid, bestVid, func(_ []graph.Node) { paths++ })
-				if paths != n {
-					b.Errorf("unexpected number of paths: got:%d want:%d", paths, n)
-				}
-			}
-		})
 	}
 }

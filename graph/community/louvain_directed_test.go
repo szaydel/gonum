@@ -7,6 +7,7 @@ package community
 import (
 	"math"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 
@@ -14,8 +15,8 @@ import (
 
 	"gonum.org/v1/gonum/floats/scalar"
 	"gonum.org/v1/gonum/graph"
-	"gonum.org/v1/gonum/graph/internal/ordered"
 	"gonum.org/v1/gonum/graph/simple"
+	"gonum.org/v1/gonum/internal/order"
 )
 
 type communityDirectedQTest struct {
@@ -244,7 +245,7 @@ func testCommunityQDirected(t *testing.T, test communityDirectedQTest, g graph.D
 		got := Q(g, communities, structure.resolution)
 		if !scalar.EqualWithinAbsOrRel(got, structure.want, structure.tol, structure.tol) && !math.IsNaN(structure.want) {
 			for _, c := range communities {
-				ordered.ByID(c)
+				order.ByID(c)
 			}
 			t.Errorf("unexpected Q value for %q %v: got: %v want: %v",
 				test.name, communities, got, structure.want)
@@ -297,7 +298,7 @@ func testCommunityDeltaQDirected(t *testing.T, test communityDirectedQTest, g gr
 				communityOf[n] = i
 				communities[i] = append(communities[i], simple.Node(n))
 			}
-			ordered.ByID(communities[i])
+			order.ByID(communities[i])
 		}
 
 		before := Q(g, communities, structure.resolution)
@@ -312,7 +313,7 @@ func testCommunityDeltaQDirected(t *testing.T, test communityDirectedQTest, g gr
 
 		// This is done to avoid run-to-run
 		// variation due to map iteration order.
-		ordered.ByID(l.nodes)
+		order.ByID(l.nodes)
 
 		l.shuffle(rnd)
 
@@ -329,7 +330,7 @@ func testCommunityDeltaQDirected(t *testing.T, test communityDirectedQTest, g gr
 					}
 					migrated[i] = append(migrated[i], simple.Node(n))
 				}
-				ordered.ByID(migrated[i])
+				order.ByID(migrated[i])
 			}
 
 			for i, c := range structure.memberships {
@@ -422,7 +423,7 @@ func testReduceQConsistencyDirected(t *testing.T, test communityDirectedQTest, g
 			for n := range c {
 				communities[i] = append(communities[i], simple.Node(n))
 			}
-			ordered.ByID(communities[i])
+			order.ByID(communities[i])
 		}
 
 		gQ := Q(g, communities, structure.resolution)
@@ -536,7 +537,7 @@ func testMoveLocalDirected(t *testing.T, test localDirectedMoveTest, g graph.Dir
 			for n := range c {
 				communities[i] = append(communities[i], simple.Node(n))
 			}
-			ordered.ByID(communities[i])
+			order.ByID(communities[i])
 		}
 
 		r := reduceDirected(reduceDirected(g, nil), communities)
@@ -602,9 +603,9 @@ func testModularizeDirected(t *testing.T, test communityDirectedQTest, g graph.D
 		for n := range c {
 			want[i] = append(want[i], simple.Node(n))
 		}
-		ordered.ByID(want[i])
+		order.ByID(want[i])
 	}
-	ordered.BySliceIDs(want)
+	order.BySliceIDs(want)
 
 	var (
 		got   *ReducedDirected
@@ -631,16 +632,16 @@ func testModularizeDirected(t *testing.T, test communityDirectedQTest, g graph.D
 		}
 
 		// Recovery of Q values is reversed.
-		if reverse(qs); !sort.Float64sAreSorted(qs) {
+		if slices.Reverse(qs); !sort.Float64sAreSorted(qs) {
 			t.Errorf("Q values not monotonically increasing: %.5v", qs)
 		}
 	}
 
 	gotCommunities := got.Communities()
 	for _, c := range gotCommunities {
-		ordered.ByID(c)
+		order.ByID(c)
 	}
-	ordered.BySliceIDs(gotCommunities)
+	order.BySliceIDs(gotCommunities)
 	if !reflect.DeepEqual(gotCommunities, want) {
 		t.Errorf("unexpected community membership for %s Q=%.4v:\n\tgot: %v\n\twant:%v",
 			test.name, bestQ, gotCommunities, want)
@@ -653,9 +654,9 @@ func testModularizeDirected(t *testing.T, test communityDirectedQTest, g graph.D
 		if p.parent != nil {
 			communities = p.parent.Communities()
 			for _, c := range communities {
-				ordered.ByID(c)
+				order.ByID(c)
 			}
-			ordered.BySliceIDs(communities)
+			order.BySliceIDs(communities)
 		} else {
 			communities = reduceDirected(g, nil).Communities()
 		}
